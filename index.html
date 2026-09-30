@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#182a67">
+  <title>ENGIE | Gestión de Trabajos Conexos</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-logo-wrap"><img src="engie-logo.png" alt="ENGIE" class="brand-logo"></div>
+    <div>
+      <h1>Gestión de Trabajos Conexos</h1>
+      <p>Coordinación preventiva de actividades simultáneas o aledañas</p>
+    </div>
+  </div>
+  <button id="btnMenu" class="menu-btn" aria-label="Abrir menú">☰</button>
+</header>
+
+<nav id="mainNav" class="nav">
+  <button class="nav-link active" data-view="inicio">Inicio</button>
+  <button class="nav-link" data-view="coordinacion">Nueva coordinación</button>
+  <button class="nav-link" data-view="registros">Registros y Dashboard</button>
+</nav>
+
+<main>
+  <section id="view-inicio" class="view">
+    <div class="hero">
+      <div>
+        <span class="eyebrow">SEGURIDAD OPERACIONAL</span>
+        <h2>Coordina trabajos conexos antes de iniciar la actividad</h2>
+        <p>Registra empresas involucradas, responsables, acuerdos operativos, ubicación y evidencia de la coordinación.</p>
+        <button class="primary" data-go="coordinacion">Registrar coordinación</button>
+      </div>
+      <div class="hero-card">
+        <span>ONE SAFETY</span>
+        <strong>Think. Talk. Act.</strong>
+      </div>
+    </div>
+
+    <div class="kpi-grid">
+      <article class="kpi"><span>Coordinaciones hoy</span><b id="kpiHoy">0</b></article>
+      <article class="kpi"><span>Empresas coordinadas</span><b id="kpiEmpresas">0</b></article>
+      <article class="kpi"><span>Registros del mes</span><b id="kpiMes">0</b></article>
+      <article class="kpi"><span>Con evidencia</span><b id="kpiEvidencia">0%</b></article>
+    </div>
+  </section>
+
+  <section id="view-coordinacion" class="view hidden">
+    <div class="section-heading">
+      <div>
+        <span class="eyebrow">REGISTRO</span>
+        <h2>Coordinación de actividades conexas</h2>
+        <p>Actualice la coordinación con una o varias empresas que desarrollan trabajos aledaños, simultáneos o conexos.</p>
+      </div>
+    </div>
+
+    <div class="coord-grid">
+      <section class="card form-card">
+        <form id="coordForm">
+          <div class="grid-3">
+            <label>Mi empresa*
+              <select id="empresaPropia" required>
+                <option value="">Seleccione</option>
+                <option>ENGIE Energía Perú</option>
+                <option>Contratista</option>
+              </select>
+            </label>
+            <label>Fecha*
+              <input id="fecha" type="date" required>
+            </label>
+            <label>Hora de gestión*
+              <input id="hora" type="time" required>
+            </label>
+          </div>
+
+          <label>Actividad propia*
+            <input id="actividad" type="text" placeholder="Ej. Mantenimiento de compuertas, izaje, trabajos en altura..." required>
+            <small>Describa la actividad que puede interactuar con otros trabajos cercanos.</small>
+          </label>
+
+          <div class="subcard">
+            <h3>Responsables de mi empresa</h3>
+            <div class="grid-2">
+              <label>Jefe del área de trabajo*
+                <input id="jefeArea" type="text" required>
+              </label>
+              <label>Supervisor SSOMA*
+                <input id="supervisorSsoma" type="text" required>
+              </label>
+            </div>
+          </div>
+
+          <div class="section-row">
+            <h3>Empresas conexas</h3>
+            <button id="btnAddEmpresa" type="button" class="secondary">+ Agregar empresa conexa</button>
+          </div>
+
+          <div id="empresasConexas" class="empresas-list"></div>
+
+          <label>Observaciones / acuerdos generales*
+            <textarea id="acuerdos" rows="5" placeholder="Secuencia de trabajos, horarios, rutas, radios, delimitaciones, permisos, aislamientos, comunicación, vigías, etc." required></textarea>
+          </label>
+
+          <div class="upload-box">
+            <label>Foto o PDF de la reunión / coordinación*
+              <input id="evidencia" type="file" accept="image/*,.pdf" required>
+            </label>
+            <small>Adjunte una evidencia legible de la coordinación realizada.</small>
+          </div>
+
+          <div class="actions">
+            <button type="reset" class="ghost">Limpiar</button>
+            <button id="btnGuardar" type="submit" class="primary">Guardar coordinación</button>
+          </div>
+        </form>
+      </section>
+
+      <aside class="card map-card">
+        <div class="map-head">
+          <div>
+            <h3>Ubicación de la actividad propia</h3>
+            <p>Revise el mapa de sectorización y seleccione el sector donde se realizará la actividad.</p>
+          </div>
+        </div>
+
+        <div class="map-toolbar">
+          <div class="map-toolbar-left">
+            <span class="map-badge">MAPA DE SECTORIZACIÓN ENGIE</span>
+          </div>
+          <div class="map-toolbar-actions">
+            <button id="mapZoomIn" type="button" class="map-tool" title="Acercar">+</button>
+            <button id="mapZoomOut" type="button" class="map-tool" title="Alejar">−</button>
+            <button id="mapReset" type="button" class="map-tool" title="Restablecer">100%</button>
+            <button id="mapFullscreen" type="button" class="map-tool" title="Pantalla completa">⛶</button>
+          </div>
+        </div>
+
+        <div id="mapViewport" class="map-viewport">
+          <div id="mapCanvas" class="map-canvas">
+            <img id="riskMap" src="mapa-riesgo-engie.png" alt="Mapa de sectorización ENGIE">
+          </div>
+        </div>
+
+        <div class="sector-panel">
+          <label>Sector / instalación*
+            <select id="sector" required form="coordForm">
+              <option value="">Seleccione</option>
+              <option>Sector 1: Bocatoma Quitaracsa</option>
+              <option>Sector 2: Túnel de acceso a Bocatoma</option>
+              <option>Sector 3: Talud izquierdo</option>
+              <option>Sector 4: Galería de Captación</option>
+              <option>Sector 5: Talud / acceso intermedio</option>
+              <option>Sector 6: Talud derecho / acceso al Desarenador</option>
+              <option>Sector 7: Desarenador</option>
+              <option>Sector 8: Vía de acceso / plataforma</option>
+            </select>
+          </label>
+
+          <label>Referencia / punto específico
+            <input id="referencia" form="coordForm" placeholder="Ej. Frente 2, progresiva 0+050, plataforma inferior...">
+          </label>
+        </div>
+
+        <div class="sector-chips">
+          <button type="button" class="sector-chip" data-sector="Sector 1: Bocatoma Quitaracsa">S1</button>
+          <button type="button" class="sector-chip" data-sector="Sector 2: Túnel de acceso a Bocatoma">S2</button>
+          <button type="button" class="sector-chip" data-sector="Sector 3: Talud izquierdo">S3</button>
+          <button type="button" class="sector-chip" data-sector="Sector 4: Galería de Captación">S4</button>
+          <button type="button" class="sector-chip" data-sector="Sector 5: Talud / acceso intermedio">S5</button>
+          <button type="button" class="sector-chip" data-sector="Sector 6: Talud derecho / acceso al Desarenador">S6</button>
+          <button type="button" class="sector-chip" data-sector="Sector 7: Desarenador">S7</button>
+          <button type="button" class="sector-chip" data-sector="Sector 8: Vía de acceso / plataforma">S8</button>
+        </div>
+
+        <div class="hint">
+          <b>Recomendación:</b> registre la coordinación antes del inicio de actividades y actualícela si cambian las condiciones operativas.
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <section id="view-registros" class="view hidden">
+    <div class="section-heading">
+      <div>
+        <span class="eyebrow">SEGUIMIENTO</span>
+        <h2>Registros y Dashboard</h2>
+        <p>Consulta y filtra las coordinaciones de trabajos conexos registradas.</p>
+      </div>
+      <button id="btnExport" class="primary">Exportar / imprimir</button>
+    </div>
+
+    <div class="kpi-grid">
+      <article class="kpi"><span>Total registros</span><b id="dTotal">0</b></article>
+      <article class="kpi"><span>Empresas involucradas</span><b id="dEmpresas">0</b></article>
+      <article class="kpi"><span>Con evidencia</span><b id="dEvidencia">0%</b></article>
+      <article class="kpi"><span>Hoy</span><b id="dHoy">0</b></article>
+    </div>
+
+    <section class="card">
+      <div class="filters">
+        <select id="fEmpresa"><option value="">Todas las empresas</option></select>
+        <input id="fFecha" type="date">
+        <input id="fTexto" type="search" placeholder="Buscar actividad, responsable o sector">
+        <button id="btnLimpiarFiltros" class="secondary">Limpiar filtros</button>
+      </div>
+
+      <div class="table-wrap">
+        <table id="tabla">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Fecha</th>
+              <th>Hora</th>
+              <th>Mi empresa</th>
+              <th>Actividad</th>
+              <th>Sector</th>
+              <th>Empresas conexas</th>
+              <th>Jefe de área</th>
+              <th>Supervisor SSOMA</th>
+              <th>Evidencia</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+</main>
+
+<div id="toast" class="toast hidden"></div>
+
+<template id="empresaTemplate">
+  <div class="empresa-item">
+    <div class="empresa-item-head">
+      <strong>Empresa conexa</strong>
+      <button type="button" class="remove-btn">Retirar</button>
+    </div>
+    <div class="grid-2">
+      <label>Empresa*
+        <input class="ec-empresa" required placeholder="Nombre de la empresa">
+      </label>
+      <label>Actividad*
+        <input class="ec-actividad" required placeholder="Actividad conexa">
+      </label>
+      <label>Responsable*
+        <input class="ec-responsable" required placeholder="Responsable del frente">
+      </label>
+      <label>Contacto / radio
+        <input class="ec-contacto" placeholder="Teléfono, radio o canal">
+      </label>
+    </div>
+  </div>
+</template>
+
+<script src="app.js?v=120"></script>
+</body>
+</html>
