@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
 
-// V1.3 - Backend centralizado en Google Sheets mediante Apps Script
+// V1.4 - Backend centralizado + carga real de evidencias a Google Drive
 const API_URL = 'https://script.google.com/macros/s/AKfycbwCsF06ftv6ItMfgoiGljNajO9NjpkcUKY2q8VCJs_NTTYVEFiMWK8iuAS-8uj9Zc49/exec';
 let registros = [];
 let cargandoRegistros = false;
@@ -76,6 +76,19 @@ async function apiGet(action){
   return data;
 }
 
+function fileToBase64(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      const result = String(reader.result || '');
+      const comma = result.indexOf(',');
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = ()=>reject(new Error('No se pudo leer el archivo seleccionado.'));
+    reader.readAsDataURL(file);
+  });
+}
+
 $('coordForm').addEventListener('submit', async e=>{
   e.preventDefault();
   const empresas = collectEmpresas();
@@ -84,10 +97,18 @@ $('coordForm').addEventListener('submit', async e=>{
     return;
   }
   const file = $('evidencia').files[0];
+
+  // Límite preventivo para evitar solicitudes demasiado grandes a Apps Script.
+  const MAX_FILE_MB = 8;
+  if(file && file.size > MAX_FILE_MB * 1024 * 1024){
+    alert(`La evidencia no debe superar ${MAX_FILE_MB} MB.`);
+    return;
+  }
+
   const btn = $('btnGuardar');
   const original = btn.textContent;
   btn.disabled = true;
-  btn.textContent = 'Guardando...';
+  btn.textContent = file ? 'Subiendo evidencia...' : 'Guardando...';
 
   const registro = {
     fecha:$('fecha').value,
@@ -103,12 +124,27 @@ $('coordForm').addEventListener('submit', async e=>{
     responsablesConexos:empresas.map(x=>x.responsable),
     contactos:empresas.map(x=>x.contacto),
     acuerdos:$('acuerdos').value.trim(),
-    // En esta versión se registra el nombre del archivo. La carga real a Drive se añadirá después.
-    evidenciaURL:file ? file.name : ''
+    evidenciaURL:''
   };
 
   try{
-    const result = await apiPost({action:'guardarCoordinacion', registro});
+    let archivo = null;
+
+    if(file){
+      const base64 = await fileToBase64(file);
+      archivo = {
+        nombre:file.name,
+        mimeType:file.type || 'application/octet-stream',
+        base64
+      };
+      btn.textContent = 'Guardando coordinación...';
+    }
+
+    const result = await apiPost({
+      action:'guardarCoordinacion',
+      registro,
+      archivo
+    });
     e.target.reset();
     $('empresasConexas').innerHTML='';
     addEmpresa();
@@ -248,9 +284,18 @@ window.verRegistro = function(id){
   const r=registros.find(x=>x.id===id);
   if(!r) return;
   const empresas=r.empresas.map((e,i)=>`${i+1}. ${e.empresa} | ${e.actividad} | Responsable: ${e.responsable}${e.contacto ? ' | Contacto: '+e.contacto : ''}`).join('\n');
-  alert(
-    `${r.id}\nFecha: ${formatDate(r.fecha)} ${r.hora}\nActividad: ${r.actividad}\nSector: ${r.sector}\nReferencia: ${r.referencia || '-'}\n\nEmpresas conexas:\n${empresas}\n\nAcuerdos:\n${r.acuerdos}\n\nEvidencia registrada: ${r.evidencia || 'No'}`
-  );
+
+  const detalle =
+    `${r.id}\nFecha: ${formatDate(r.fecha)} ${r.hora}\nActividad: ${r.actividad}\nSector: ${r.sector}\nReferencia: ${r.referencia || '-'}\n\nEmpresas conexas:\n${empresas}\n\nAcuerdos:\n${r.acuerdos}\n\nEvidencia: ${r.evidencia ? 'Sí' : 'No'}`;
+
+  if(r.evidencia && /^https?:\/\//i.test(r.evidencia)){
+    const abrir = confirm(detalle + '\n\n¿Deseas abrir la evidencia en Google Drive?');
+    if(abrir){
+      window.open(r.evidencia, '_blank', 'noopener');
+    }
+  }else{
+    alert(detalle);
+  }
 };
 
 function formatDate(v){
