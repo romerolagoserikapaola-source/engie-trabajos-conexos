@@ -1,7 +1,9 @@
-
 const $ = id => document.getElementById(id);
-const STORAGE_KEY = 'engie_trabajos_conexos_v1';
-let registros = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+
+// V1.3 - Backend centralizado en Google Sheets mediante Apps Script
+const API_URL = 'https://script.google.com/macros/s/AKfycbwCsF06ftv6ItMfgoiGljNajO9NjpkcUKY2q8VCJs_NTTYVEFiMWK8iuAS-8uj9Zc49/exec';
+let registros = [];
+let cargandoRegistros = false;
 
 function nowLocal() {
   const d = new Date();
@@ -17,7 +19,7 @@ function showView(name){
   document.querySelectorAll('.view').forEach(v=>v.classList.add('hidden'));
   document.querySelectorAll('.nav-link').forEach(b=>b.classList.toggle('active', b.dataset.view===name));
   $('view-'+name).classList.remove('hidden');
-  if(name==='registros') renderAll();
+  if(name==='registros') cargarRegistros();
   $('mainNav').classList.remove('open');
 }
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>showView(b.dataset.view));
@@ -36,10 +38,11 @@ function addEmpresa(data={}){
 }
 $('btnAddEmpresa').onclick=()=>addEmpresa();
 
-function toast(msg){
+function toast(msg, tipo='ok'){
   $('toast').textContent = msg;
+  $('toast').dataset.tipo = tipo;
   $('toast').classList.remove('hidden');
-  setTimeout(()=>$('toast').classList.add('hidden'),2500);
+  setTimeout(()=>$('toast').classList.add('hidden'),3200);
 }
 
 function collectEmpresas(){
@@ -51,7 +54,29 @@ function collectEmpresas(){
   }));
 }
 
-$('coordForm').addEventListener('submit', e=>{
+async function apiPost(payload){
+  const response = await fetch(API_URL, {
+    method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify(payload),
+    redirect:'follow'
+  });
+  if(!response.ok) throw new Error(`Error HTTP ${response.status}`);
+  const data = await response.json();
+  if(!data.ok) throw new Error(data.error || 'Error del backend');
+  return data;
+}
+
+async function apiGet(action){
+  const url = `${API_URL}?action=${encodeURIComponent(action)}&_=${Date.now()}`;
+  const response = await fetch(url, {cache:'no-store', redirect:'follow'});
+  if(!response.ok) throw new Error(`Error HTTP ${response.status}`);
+  const data = await response.json();
+  if(!data.ok) throw new Error(data.error || 'Error del backend');
+  return data;
+}
+
+$('coordForm').addEventListener('submit', async e=>{
   e.preventDefault();
   const empresas = collectEmpresas();
   if(!empresas.length){
@@ -59,29 +84,96 @@ $('coordForm').addEventListener('submit', e=>{
     return;
   }
   const file = $('evidencia').files[0];
-  const rec = {
-    id:'TC-'+String(registros.length+1).padStart(4,'0'),
+  const btn = $('btnGuardar');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+
+  const registro = {
     fecha:$('fecha').value,
     hora:$('hora').value,
-    empresaPropia:$('empresaPropia').value,
-    actividad:$('actividad').value.trim(),
+    miEmpresa:$('empresaPropia').value,
+    actividadPropia:$('actividad').value.trim(),
     jefeArea:$('jefeArea').value.trim(),
-    supervisorSsoma:$('supervisorSsoma').value.trim(),
-    empresas,
-    acuerdos:$('acuerdos').value.trim(),
+    supervisorSSOMA:$('supervisorSsoma').value.trim(),
     sector:$('sector').value,
     referencia:$('referencia').value.trim(),
-    evidencia:file ? file.name : ''
+    empresasConexas:empresas.map(x=>x.empresa),
+    actividadesConexas:empresas.map(x=>x.actividad),
+    responsablesConexos:empresas.map(x=>x.responsable),
+    contactos:empresas.map(x=>x.contacto),
+    acuerdos:$('acuerdos').value.trim(),
+    // En esta versión se registra el nombre del archivo. La carga real a Drive se añadirá después.
+    evidenciaURL:file ? file.name : ''
   };
-  registros.push(rec);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(registros));
-  e.target.reset();
-  $('empresasConexas').innerHTML='';
-  addEmpresa();
-  const n=nowLocal(); $('fecha').value=n.date; $('hora').value=n.time;
-  toast('Coordinación registrada correctamente.');
-  renderAll();
+
+  try{
+    const result = await apiPost({action:'guardarCoordinacion', registro});
+    e.target.reset();
+    $('empresasConexas').innerHTML='';
+    addEmpresa();
+    const n=nowLocal(); $('fecha').value=n.date; $('hora').value=n.time;
+    toast(`Coordinación ${result.data?.id || ''} registrada en Google Sheets.`);
+    await cargarRegistros(true);
+  }catch(err){
+    console.error(err);
+    alert('No se pudo guardar en Google Sheets.\n\n' + err.message);
+  }finally{
+    btn.disabled = false;
+    btn.textContent = original;
+  }
 });
+
+function splitPipe(v){
+  if(!v) return [];
+  return String(v).split('|').map(x=>x.trim());
+}
+
+function normalizarRegistro(r){
+  const empresas = splitPipe(r.EmpresasConexas);
+  const actividades = splitPipe(r.ActividadesConexas);
+  const responsables = splitPipe(r.ResponsablesConexos);
+  const contactos = splitPipe(r.Contactos);
+  const n = Math.max(empresas.length, actividades.length, responsables.length, contactos.length);
+  return {
+    id:r.ID || '',
+    fecha:r.Fecha || '',
+    hora:r.Hora || '',
+    empresaPropia:r.MiEmpresa || '',
+    actividad:r.ActividadPropia || '',
+    jefeArea:r.JefeArea || '',
+    supervisorSsoma:r.SupervisorSSOMA || '',
+    sector:r.Sector || '',
+    referencia:r.Referencia || '',
+    acuerdos:r.Acuerdos || '',
+    evidencia:r.EvidenciaURL || '',
+    empresas:Array.from({length:n},(_,i)=>(
+      {empresa:empresas[i]||'', actividad:actividades[i]||'', responsable:responsables[i]||'', contacto:contactos[i]||''}
+    ))
+  };
+}
+
+async function cargarRegistros(silencioso=false){
+  if(cargandoRegistros) return;
+  cargandoRegistros = true;
+  if(!silencioso) setTablaMensaje('Cargando registros desde Google Sheets...');
+  try{
+    const data = await apiGet('listarCoordinaciones');
+    registros = (data.data || []).map(normalizarRegistro);
+    renderAll();
+  }catch(err){
+    console.error(err);
+    if(!silencioso) setTablaMensaje('No fue posible cargar los registros. Revise la conexión con Apps Script.');
+    toast('No se pudo consultar Google Sheets.', 'error');
+  }finally{
+    cargandoRegistros = false;
+  }
+}
+
+function setTablaMensaje(msg){
+  const tbody=$('tabla').querySelector('tbody');
+  tbody.innerHTML=`<tr><td colspan="11">${escapeHtml(msg)}</td></tr>`;
+}
 
 function renderKPIs(){
   const today=nowLocal().date;
@@ -135,11 +227,11 @@ function renderTable(){
       <td>${escapeHtml(r.empresaPropia)}</td>
       <td>${escapeHtml(r.actividad)}</td>
       <td>${escapeHtml(r.sector)}</td>
-      <td>${escapeHtml(r.empresas.map(e=>e.empresa).join(', '))}</td>
+      <td>${escapeHtml(r.empresas.map(e=>e.empresa).filter(Boolean).join(', '))}</td>
       <td>${escapeHtml(r.jefeArea)}</td>
       <td>${escapeHtml(r.supervisorSsoma)}</td>
       <td>${r.evidencia ? '<span class="badge">Sí</span>' : 'No'}</td>
-      <td><button class="secondary" onclick="verRegistro('${r.id}')">Ver</button></td>
+      <td><button class="secondary" onclick="verRegistro('${escapeJs(r.id)}')">Ver</button></td>
     </tr>`).join('') || '<tr><td colspan="11">Sin registros para los filtros seleccionados.</td></tr>';
 }
 
@@ -155,19 +247,25 @@ $('btnExport').onclick=()=>window.print();
 window.verRegistro = function(id){
   const r=registros.find(x=>x.id===id);
   if(!r) return;
-  const empresas=r.empresas.map((e,i)=>`${i+1}. ${e.empresa} | ${e.actividad} | Responsable: ${e.responsable}`).join('\n');
+  const empresas=r.empresas.map((e,i)=>`${i+1}. ${e.empresa} | ${e.actividad} | Responsable: ${e.responsable}${e.contacto ? ' | Contacto: '+e.contacto : ''}`).join('\n');
   alert(
-    `${r.id}\nFecha: ${formatDate(r.fecha)} ${r.hora}\nActividad: ${r.actividad}\nSector: ${r.sector}\n\nEmpresas conexas:\n${empresas}\n\nAcuerdos:\n${r.acuerdos}`
+    `${r.id}\nFecha: ${formatDate(r.fecha)} ${r.hora}\nActividad: ${r.actividad}\nSector: ${r.sector}\nReferencia: ${r.referencia || '-'}\n\nEmpresas conexas:\n${empresas}\n\nAcuerdos:\n${r.acuerdos}\n\nEvidencia registrada: ${r.evidencia || 'No'}`
   );
 };
 
 function formatDate(v){
   if(!v) return '';
-  const [y,m,d]=v.split('-');
-  return `${d}/${m}/${y}`;
+  if(/^\d{4}-\d{2}-\d{2}$/.test(v)){
+    const [y,m,d]=v.split('-');
+    return `${d}/${m}/${y}`;
+  }
+  return v;
 }
 function escapeHtml(v){
   return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+function escapeJs(v){
+  return String(v??'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\r?\n/g,' ');
 }
 
 const n=nowLocal();
@@ -175,7 +273,7 @@ $('fecha').value=n.date;
 $('hora').value=n.time;
 addEmpresa();
 renderAll();
-
+cargarRegistros(true);
 
 // V1.2 - mapa de sectorización ENGIE
 let mapScale = 1;
